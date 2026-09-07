@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    /* Global Monitor Reset */
+    body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; background-color: #180048; color: #ffffff; overflow: hidden; }
+    
+    /* Header & Tabs */
+    .main-header { display: flex; align-items: center; padding: 10px 20px; background-color: #180048; border-bottom: 1px solid rgba(255, 255, 255, 0.1); height: 50px; }
+    .main-header img { height: 40px; width: auto; object-fit: contain; margin-right: 15px; border-radius: 4px; }
+    .main-header h1 { font-size: 18px; margin: 0; font-weight: bold; flex-grow: 1; }
+
+    .tab { background-color: #2a0066; border-bottom: 2px solid #df18a3; height: 40px; display: flex; overflow-x: auto; white-space: nowrap; }
+    .tab button { background-color: inherit; border: none; outline: none; cursor: pointer; padding: 0 20px; font-size: 14px; font-weight: bold; transition: 0.3s; color: #ffffff; }
+    .tab button:hover { background-color: #3b0086; }
+    .tab button.active { background-color: #df18a3; color: white; }
+    
+    /* Core Layouts */
+    .tabcontent { display: none; height: calc(100vh - 105px); position: relative; overflow-y: auto; }
+    .dashboard-container { display: flex; flex-direction: column; min-height: 100%; padding: 15px; box-sizing: border-box; gap: 10px; }
+    
+    .half-split-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; flex-grow: 1; min-height: 0; }
+    .quad-split-layout { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 15px; flex-grow: 1; min-height: 0; }
+    .panel { display: flex; flex-direction: column; background: #1c004a; border-radius: 8px; padding: 12px; border: 1px solid rgba(255,255,255,0.05); min-height: 0; }
+    
+    /* Typography */
+    .dash-header { margin: 0 0 10px 0; text-align: center; color: #ffffff; font-size: 16px; }
+    .section-header { margin: 0 0 8px 0; font-size: 14px; color: #df18a3; border-bottom: 1px solid #df18a3; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .chart-title { margin: 0 0 5px 0; font-size: 12px; color: #d1b3ff; text-align: center; font-weight: normal; }
+
+    /* Compact Cards */
+    .cards-grid { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; padding-bottom: 4px; justify-content: flex-start; }
+    .card { flex: 1 1 auto; min-width: 105px; background: #2a0066; padding: 8px 6px; border-radius: 8px; text-align: center; border-top: 3px solid #df18a3; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+    .card h3 { margin: 0; font-size: 11px; color: #d1b3ff; font-weight: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card .value { font-size: 20px; font-weight: bold; margin: 4px 0 0 0; color: #ffffff; line-height: 1; }
+    
+    .card.not-started { border-top-color: #ff4d85; } .card.in-progress { border-top-color: #ffc107; } .card.complete { border-top-color: #00e676; } .card.dispatched { border-top-color: #00d4ff; }  
+    .card.octo-color { border-top-color: #9b5de5; } .card.gxo-color { border-top-color: #df18a3; } .card.split-color { border-top-color: #ffffff; } .card.pipeline-card { border-top-color: #00d4ff; }
+    .card.reason-card { border-top-color: #ff9f43; } 
+
+    /* Chart Containers */
+    .charts-row { display: flex; flex-direction: row; gap: 10px; flex-grow: 1; min-height: 220px; }
+    .chart-wrapper { display: flex; flex-direction: column; flex: 1; background: #2a0066; padding: 8px; border-radius: 8px; min-width: 0; min-height: 200px; }
+    .canvas-box { flex-grow: 1; position: relative; min-height: 150px; }
+    canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; }
+
+    /* Breakdown Bar */
+    .vehicle-breakdown-row { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 10px; padding: 8px; background: #1c004a; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-top: auto; }
+    .breakdown-item { display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 4px; border-left: 3px solid #00d4ff; white-space: nowrap; }
+    .breakdown-item span:first-child { font-size: 12px; }
+    .breakdown-item span:last-child { font-size: 16px; color: #00d4ff; font-weight: bold; }
+
+    /* Map styling */
+    #map { height: 100%; width: 100%; background: #180048; position: absolute; top: 0; bottom: 0; left: 0; right: 0;}
+    #loading { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000; background: #df18a3; color: white; padding: 10px 20px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.4); border: 2px solid #ffffff; font-size: 14px; max-width: 80%; text-align: center; }
+    .custom-pin { background: transparent; border: none; }
+    .info.legend { background: #2a0066; color: #ffffff; padding: 10px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); line-height: 1.5em; font-size: 12px; border: 1px solid rgba(255,255,255,0.2); }
+    .info.legend i { width: 14px; height: 14px; float: left; margin-right: 6px; margin-top: 2px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.5); }
+    .legend-title { font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid #df18a3; padding-bottom: 2px; color: #ffffff; }
+  </style>
+</head>
+<body>
+
+  <div class="main-header">
+    <img src="https://cached.imagescaler.hbpl.co.uk/resize/scaleWidth/952/cached.offlinehbpl.hbpl.co.uk/news/KMP/money-shareimage-1920x1080-20.png" alt="Octopus Energy Logo">
+    <h1>Supply Chain Fulfillment Dashboard</h1>
+  </div>
+
+  <div class="tab">
+    <button class="tablinks active" onclick="openTab(event, 'OrdersTab', 0)">Orders (Total)</button>
+    <button class="tablinks" onclick="openTab(event, 'DepotTab', 1)">Orders (Depot Split)</button>
+    <button class="tablinks" onclick="openTab(event, 'DeliverySplitTab', 2)">Delivery Split</button>
+    <button class="tablinks" onclick="openTab(event, 'CancellationsTab', 3)">Cancellations</button>
+    <button class="tablinks" onclick="openTab(event, 'PreDelTab', 4)">Pre-Delivery</button>
+    <button class="tablinks" onclick="openTab(event, 'PreDelDepotTab', 5)">Pre-Del by Depot</button>
+    <button class="tablinks" onclick="openTab(event, 'MapTab', 6)">Delivery Map</button>
+    <button class="tablinks" onclick="openTab(event, 'PipelineDepotTab', 7)">Pipeline by Depot</button>
+  </div>
+
+  <!-- Tab 1: Orders (Combined) -->
+  <div id="OrdersTab" class="tabcontent" style="display: block;">
+    <div class="dashboard-container">
+      <h2 class="dash-header week-header">Loading Data...</h2>
+      <div class="panel">
+        <h3 class="section-header">Fulfillment Status</h3>
+        <div class="cards-grid">
+          <div class="card"><h3>Overall Picks</h3><p class="value" id="val-total">-</p></div>
+          <div class="card not-started"><h3>Not Started</h3><p class="value" id="val-notstarted">-</p></div>
+          <div class="card in-progress"><h3>In Progress</h3><p class="value" id="val-inprogress">-</p></div>
+          <div class="card complete"><h3>Pick Complete</h3><p class="value" id="val-complete">-</p></div>
+          <div class="card dispatched"><h3>Dispatched</h3><p class="value" id="val-dispatched">-</p></div>
+        </div>
+        <h3 class="section-header">Pipeline Breakdown</h3>
+        <div class="cards-grid" id="pipeline-combined"></div>
+      </div>
+      <div class="charts-row">
+        <div class="chart-wrapper">
+          <h4 class="chart-title">Orders by Day</h4>
+          <div class="canvas-box"><canvas id="ordersChart"></canvas></div>
+        </div>
+        <div class="chart-wrapper" style="flex: 0.6; max-width: 450px; margin: 0 auto;">
+          <h4 class="chart-title">Overall Pipeline Split</h4>
+          <div class="canvas-box"><canvas id="pipeCombinedChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Orders (Depot Split) -->
+  <div id="DepotTab" class="tabcontent">
+    <div class="dashboard-container">
+      <h2 class="dash-header week-header" style="margin-bottom:0;">Loading Data...</h2>
+      <div class="half-split-layout">
+        <div class="panel">
+          <h3 class="section-header">📍 Hinckley Depot</h3>
+          <div class="cards-grid">
+            <div class="card"><h3>Overall Picks</h3><p class="value" id="val-h-total">-</p></div>
+            <div class="card not-started"><h3>Not Started</h3><p class="value" id="val-h-notstarted">-</p></div>
+            <div class="card in-progress"><h3>In Progress</h3><p class="value" id="val-h-inprogress">-</p></div>
+            <div class="card complete"><h3>Complete</h3><p class="value" id="val-h-complete">-</p></div>
+            <div class="card dispatched"><h3>Dispatched</h3><p class="value" id="val-h-dispatched">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper"><h4 class="chart-title">Orders by Day</h4><div class="canvas-box"><canvas id="hinckleyChart"></canvas></div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 class="section-header">📍 Sheffield Depot</h3>
+          <div class="cards-grid">
+            <div class="card"><h3>Overall Picks</h3><p class="value" id="val-s-total">-</p></div>
+            <div class="card not-started"><h3>Not Started</h3><p class="value" id="val-s-notstarted">-</p></div>
+            <div class="card in-progress"><h3>In Progress</h3><p class="value" id="val-s-inprogress">-</p></div>
+            <div class="card complete"><h3>Complete</h3><p class="value" id="val-s-complete">-</p></div>
+            <div class="card dispatched"><h3>Dispatched</h3><p class="value" id="val-s-dispatched">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper"><h4 class="chart-title">Orders by Day</h4><div class="canvas-box"><canvas id="sheffieldChart"></canvas></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: Delivery Split -->
+  <div id="DeliverySplitTab" class="tabcontent">
+    <div class="dashboard-container">
+      <h2 class="dash-header week-header" style="margin-bottom:0;">Loading Data...</h2>
+      <div class="quad-split-layout">
+        <div class="panel">
+          <h3 class="section-header">🌍 Combined Deliveries</h3>
+          <div class="cards-grid">
+            <div class="card"><h3>Total</h3><p class="value" id="del-c-total">-</p></div>
+            <div class="card octo-color"><h3>Octopus</h3><p class="value" id="del-c-octo">-</p></div>
+            <div class="card gxo-color"><h3>GXO</h3><p class="value" id="del-c-gxo">-</p></div>
+            <div class="card split-color"><h3>Split</h3><p class="value" id="del-c-split" style="font-size:16px;">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper"><h4 class="chart-title">Volume</h4><div class="canvas-box"><canvas id="delCombinedChart"></canvas></div></div>
+            <div class="chart-wrapper"><h4 class="chart-title">% Split</h4><div class="canvas-box"><canvas id="delCombinedPctChart"></canvas></div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 class="section-header">📍 Hinckley Deliveries</h3>
+          <div class="cards-grid">
+            <div class="card"><h3>Total</h3><p class="value" id="del-h-total">-</p></div>
+            <div class="card octo-color"><h3>Octopus</h3><p class="value" id="del-h-octo">-</p></div>
+            <div class="card gxo-color"><h3>GXO</h3><p class="value" id="del-h-gxo">-</p></div>
+            <div class="card split-color"><h3>Split</h3><p class="value" id="del-h-split" style="font-size:16px;">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper"><h4 class="chart-title">Volume</h4><div class="canvas-box"><canvas id="delHinckleyChart"></canvas></div></div>
+            <div class="chart-wrapper"><h4 class="chart-title">% Split</h4><div class="canvas-box"><canvas id="delHinckleyPctChart"></canvas></div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 class="section-header">📍 Sheffield Deliveries</h3>
+          <div class="cards-grid">
+            <div class="card"><h3>Total</h3><p class="value" id="del-s-total">-</p></div>
+            <div class="card octo-color"><h3>Octopus</h3><p class="value" id="del-s-octo">-</p></div>
+            <div class="card gxo-color"><h3>GXO</h3><p class="value" id="del-s-gxo">-</p></div>
+            <div class="card split-color"><h3>Split</h3><p class="value" id="del-s-split" style="font-size:16px;">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper"><h4 class="chart-title">Volume</h4><div class="canvas-box"><canvas id="delSheffieldChart"></canvas></div></div>
+            <div class="chart-wrapper"><h4 class="chart-title">% Split</h4><div class="canvas-box"><canvas id="delSheffieldPctChart"></canvas></div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 class="section-header">📍 Slough Deliveries</h3>
+          <div class="cards-grid">
+            <div class="card"><h3>Total</h3><p class="value" id="del-sl-total">-</p></div>
+            <div class="card octo-color"><h3>Octopus</h3><p class="value" id="del-sl-octo">-</p></div>
+            <div class="card gxo-color"><h3>GXO</h3><p class="value" id="del-sl-gxo">-</p></div>
+            <div class="card split-color"><h3>Split</h3><p class="value" id="del-sl-split" style="font-size:16px;">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper"><h4 class="chart-title">Volume</h4><div class="canvas-box"><canvas id="delSloughChart"></canvas></div></div>
+            <div class="chart-wrapper"><h4 class="chart-title">% Split</h4><div class="canvas-box"><canvas id="delSloughPctChart"></canvas></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="vehicle-breakdown-row" id="vehicle-breakdown-container"></div>
+    </div>
+  </div>
+
+  <!-- Tab 4: Cancellations -->
+  <div id="CancellationsTab" class="tabcontent">
+    <div class="dashboard-container">
+      <h2 class="dash-header week-header">Loading Data...</h2>
+      <div class="panel">
+        <h3 class="section-header">Cancellation Overview</h3>
+        <div class="cards-grid">
+          <div class="card"><h3>Total Orders Processed</h3><p class="value" id="val-processed-total">-</p></div>
+          <div class="card not-started"><h3>Total Cancellations</h3><p class="value" id="val-cancelled-total">-</p></div>
+          <div class="card split-color"><h3>Overall Cancellation %</h3><p class="value" id="val-cancel-pct">-</p></div>
+        </div>
+        <h3 class="section-header" style="margin-top: 15px;">Cancellation Reasons (Location of Stock)</h3>
+        <div class="cards-grid" id="cancel-reasons-container"></div>
+      </div>
+      <div class="charts-row">
+        <div class="chart-wrapper">
+          <h4 class="chart-title">Cancellation % by Day (with Trend)</h4>
+          <div class="canvas-box"><canvas id="cancelChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 5: Pre-Delivery (Combined) -->
+  <div id="PreDelTab" class="tabcontent">
+    <div class="dashboard-container">
+      <h2 class="dash-header week-header">Loading Data...</h2>
+      <div class="panel">
+        <h3 class="section-header">Pre-Delivery vs Standard Orders (By Delivery Date)</h3>
+        <div class="cards-grid">
+          <div class="card split-color"><h3>Total Deliveries</h3><p class="value" id="val-pd-total">-</p></div>
+          <div class="card in-progress"><h3>Pre-Delivery Count</h3><p class="value" id="val-pd-count">-</p></div>
+          <div class="card pipeline-card"><h3>Pre-Delivery %</h3><p class="value" id="val-pd-pct">-</p></div>
+          <div class="card dispatched"><h3>Standard Count</h3><p class="value" id="val-std-count">-</p></div>
+          <div class="card split-color"><h3>Standard %</h3><p class="value" id="val-std-pct">-</p></div>
+        </div>
+      </div>
+      <div class="charts-row">
+        <div class="chart-wrapper">
+          <h4 class="chart-title">Total Deliveries vs Pre-Deliveries (Solar & HP)</h4>
+          <div class="canvas-box"><canvas id="preDelChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 6: Pre-Delivery (Depot Split) -->
+  <div id="PreDelDepotTab" class="tabcontent">
+    <div class="dashboard-container">
+      <h2 class="dash-header week-header" style="margin-bottom:0;">Loading Data...</h2>
+      <div class="half-split-layout">
+        <!-- Hinckley Column -->
+        <div class="panel">
+          <h3 class="section-header">📍 Hinckley Pre-Delivery</h3>
+          <div class="cards-grid">
+            <div class="card split-color"><h3>Total Deliveries</h3><p class="value" id="val-h-pd-total">-</p></div>
+            <div class="card in-progress"><h3>Pre-Delivery Count</h3><p class="value" id="val-h-pd-count">-</p></div>
+            <div class="card pipeline-card"><h3>Pre-Delivery %</h3><p class="value" id="val-h-pd-pct">-</p></div>
+            <div class="card dispatched"><h3>Standard Count</h3><p class="value" id="val-h-std-count">-</p></div>
+            <div class="card split-color"><h3>Standard %</h3><p class="value" id="val-h-std-pct">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper">
+              <h4 class="chart-title">Total Deliveries vs Pre-Deliveries (Solar & HP)</h4>
+              <div class="canvas-box"><canvas id="preDelHinckleyChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+        <!-- Sheffield Column -->
+        <div class="panel">
+          <h3 class="section-header">📍 Sheffield Pre-Delivery</h3>
+          <div class="cards-grid">
+            <div class="card split-color"><h3>Total Deliveries</h3><p class="value" id="val-s-pd-total">-</p></div>
+            <div class="card in-progress"><h3>Pre-Delivery Count</h3><p class="value" id="val-s-pd-count">-</p></div>
+            <div class="card pipeline-card"><h3>Pre-Delivery %</h3><p class="value" id="val-s-pd-pct">-</p></div>
+            <div class="card dispatched"><h3>Standard Count</h3><p class="value" id="val-s-std-count">-</p></div>
+            <div class="card split-color"><h3>Standard %</h3><p class="value" id="val-s-std-pct">-</p></div>
+          </div>
+          <div class="charts-row">
+            <div class="chart-wrapper">
+              <h4 class="chart-title">Total Deliveries vs Pre-Deliveries (Solar & HP)</h4>
+              <div class="canvas-box"><canvas id="preDelSheffieldChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 7: Map -->
+  <div id="MapTab" class="tabcontent">
+    <div id="loading">Loading data...</div>
+    <div id="map"></div>
+  </div>
+
+  <!-- Tab 8: Pipeline (Depot Split) -->
+  <div id="PipelineDepotTab" class="tabcontent">
+    <div class="dashboard-container">
+      <h2 class="dash-header week-header" style="margin-bottom:0;">Loading Data...</h2>
+      <div class="half-split-layout">
+        <div class="panel">
+          <h3 class="section-header">⚡ Hinckley Pipeline Breakdown</h3>
+          <div class="cards-grid" id="pipeline-hinckley"></div>
+          <div class="charts-row" style="justify-content: center; align-items: center; min-height: 250px;">
+            <div class="chart-wrapper" style="width: 100%; max-width: 500px; background: transparent; box-shadow: none;">
+              <h4 class="chart-title">Overall Split</h4>
+              <div class="canvas-box"><canvas id="pipeHinckleyChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 class="section-header">⚡ Sheffield Pipeline Breakdown</h3>
+          <div class="cards-grid" id="pipeline-sheffield"></div>
+          <div class="charts-row" style="justify-content: center; align-items: center; min-height: 250px;">
+            <div class="chart-wrapper" style="width: 100%; max-width: 500px; background: transparent; box-shadow: none;">
+              <h4 class="chart-title">Overall Split</h4>
+              <div class="canvas-box"><canvas id="pipeSheffieldChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    Chart.defaults.color = '#ffffff';
+    Chart.defaults.font.size = 11;
+    Chart.defaults.plugins.legend.labels.boxWidth = 12;
+
+    const pipelineColors = ['#00d4ff', '#df18a3', '#9b5de5', '#00e676', '#ffc107', '#ff4d85', '#ff9f43', '#a55eea', '#1abc9c', '#f368e0', '#341f97', '#ee5253'];
+    
+    let charts = { 
+      main: null, hinckley: null, sheffield: null,
+      delCombined: null, delCombinedPct: null,
+      delHinckley: null, delHinckleyPct: null,
+      delSheffield: null, delSheffieldPct: null,
+      delSlough: null, delSloughPct: null,
+      pipeCombined: null, pipeHinckley: null, pipeSheffield: null,
+      cancelChart: null, preDelChart: null, preDelHinckleyChart: null, preDelSheffieldChart: null
+    };
+
+    window.appData = null; 
+    let currentTabIndex = 0;
+    let cycleInterval = null;
+
+    const tabNames = [
+      'OrdersTab', 
+      'DepotTab', 
+      'DeliverySplitTab', 
+      'CancellationsTab', 
+      'PreDelTab', 
+      'PreDelDepotTab', 
+      'MapTab', 
+      'PipelineDepotTab'
+    ];
+
+    function openTab(evt, tabName, index) {
+      let tabcontent = document.getElementsByClassName("tabcontent");
+      for (let i = 0; i < tabcontent.length; i++) tabcontent[i].style.display = "none";
+      
+      let tablinks = document.getElementsByClassName("tablinks");
+      for (let i = 0; i < tablinks.length; i++) tablinks[i].className = tablinks[i].className.replace(" active", "");
+      
+      document.getElementById(tabName).style.display = "block";
+      
+      if (evt && evt.currentTarget) {
+        evt.currentTarget.className += " active";
+      } else if (index !== undefined) {
+        tablinks[index].className += " active";
+      }
+
+      if (index !== undefined) currentTabIndex = index;
+      if (tabName === 'MapTab' && map) setTimeout(function(){ map.invalidateSize(); }, 10);
+
+      if (evt) resetCycle();
+    }
+
+    function cycleTabs() {
+      currentTabIndex = (currentTabIndex + 1) % tabNames.length;
+      openTab(null, tabNames[currentTabIndex], currentTabIndex);
+    }
+
+    function resetCycle() {
+      if (cycleInterval) clearInterval(cycleInterval);
+      cycleInterval = setInterval(cycleTabs, 120000); 
+    }
+
+    resetCycle();
+
+    var map = L.map('map').setView([54.5, -3.2], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+    var markersLayer = L.layerGroup().addTo(map);
+    var legend = L.control({position: 'bottomright'}); 
+    legend.onAdd = function () {
+      var div = L.DomUtil.create('div', 'info legend');
+      div.innerHTML = '<div class="legend-title">Carriers</div><i style="background: #df18a3"></i> GXO<br><i style="background: #9b5de5"></i> Octopus<br>';
+      return div;
+    };
+    legend.addTo(map);
+
+    const createPin = (color) => L.divIcon({ className: "custom-pin", iconAnchor: [15, 30], popupAnchor: [0, -30], html: `<svg width="30" height="30" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg"><path d="M15 0 C7 0 2 6 2 14 C2 22 15 30 15 30 C15 30 28 22 28 14 C28 6 23 0 15 0 Z" fill="${color}" stroke="white" stroke-width="2"/><circle cx="15" cy="11" r="5" fill="white"/></svg>` });
+    const pinGXO = createPin("#df18a3"), pinOctopus = createPin("#9b5de5"), pinDefault = createPin("#00d4ff");
+
+    fetchData();
+
+    function fetchData() {
+      document.getElementById('loading').innerText = "Loading data from sheet...";
+      google.script.run
+        .withSuccessHandler(function(response) {
+           window.appData = response; 
+           updateDashboard(window.appData.dashboard1W); 
+           plotDeliveries(response.map);
+        })
+        .withFailureHandler(showError)
+        .getAppData();
+    }
+    
+    function calculateSplit(octo, gxo) {
+      let total = octo + gxo;
+      if (total === 0) return "0% / 0%";
+      let octoPct = Math.round((octo / total) * 100);
+      let gxoPct = Math.round((gxo / total) * 100);
+      return `${octoPct}% / ${gxoPct}%`;
+    }
+
+    function calculateTrendLine(data) {
+      let n = 0, sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+      for (let i = 0; i < data.length; i++) {
+        if (data[i] !== null && !isNaN(data[i])) {
+          n++; sumX += i; sumY += data[i]; sumXY += i * data[i]; sumXX += i * i;
+        }
+      }
+      if (n === 0) return data.map(() => 0);
+      let slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+      let intercept = (sumY - slope * sumX) / n;
+      return data.map((_, i) => slope * i + intercept);
+    }
+
+    function renderPipelineCards(containerId, pipelineData) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      const sortedKeys = Object.keys(pipelineData).sort();
+      if (sortedKeys.length === 0) {
+        container.innerHTML = '<p style="color:#d1b3ff; margin-left:5px; font-size:12px;">No pipeline data.</p>';
+        return;
+      }
+      sortedKeys.forEach(key => {
+        container.innerHTML += `<div class="card pipeline-card"><h3 title="${key}">${key}</h3><p class="value">${pipelineData[key]}</p></div>`;
+      });
+    }
+
+    function updateDashboard(dataObj) {
+      if (!dataObj) return;
+      
+      let headers = document.getElementsByClassName('week-header');
+      for (let i = 0; i < headers.length; i++) headers[i].innerText = `Data for W/C ${dataObj.wcString}`;
+      
+      // Update Core Order Cards
+      document.getElementById('val-total').innerText = dataObj.stats.totalOrders;
+      document.getElementById('val-notstarted').innerText = dataObj.stats.notStarted;
+      document.getElementById('val-inprogress').innerText = dataObj.stats.inProgress;
+      document.getElementById('val-complete').innerText = dataObj.stats.complete;
+      document.getElementById('val-dispatched').innerText = dataObj.stats.dispatched;
+
+      document.getElementById('val-h-total').innerText = dataObj.hinckleyStats.totalOrders;
+      document.getElementById('val-h-notstarted').innerText = dataObj.hinckleyStats.notStarted;
+      document.getElementById('val-h-inprogress').innerText = dataObj.hinckleyStats.inProgress;
+      document.getElementById('val-h-complete').innerText = dataObj.hinckleyStats.complete;
+      document.getElementById('val-h-dispatched').innerText = dataObj.hinckleyStats.dispatched;
+
+      document.getElementById('val-s-total').innerText = dataObj.sheffieldStats.totalOrders;
+      document.getElementById('val-s-notstarted').innerText = dataObj.sheffieldStats.notStarted;
+      document.getElementById('val-s-inprogress').innerText = dataObj.sheffieldStats.inProgress;
+      document.getElementById('val-s-complete').innerText = dataObj.sheffieldStats.complete;
+      document.getElementById('val-s-dispatched').innerText = dataObj.sheffieldStats.dispatched;
+
+      // Render Dynamic Pipeline Cards & Charts
+      renderPipelineCards('pipeline-combined', dataObj.stats.pipeline);
+      renderPipelineCards('pipeline-hinckley', dataObj.hinckleyStats.pipeline);
+      renderPipelineCards('pipeline-sheffield', dataObj.sheffieldStats.pipeline);
+
+      charts.pipeCombined = buildPipelineChart('pipeCombinedChart', charts.pipeCombined, dataObj.stats.pipeline);
+      charts.pipeHinckley = buildPipelineChart('pipeHinckleyChart', charts.pipeHinckley, dataObj.hinckleyStats.pipeline);
+      charts.pipeSheffield = buildPipelineChart('pipeSheffieldChart', charts.pipeSheffield, dataObj.sheffieldStats.pipeline);
+
+      // Pre-Delivery Tab Logic (Combined - Aligned to Delivery Date)
+      let pdTotal = dataObj.preDelStats.totalPreDel;
+      let stdTotal = dataObj.preDelStats.totalStandard;
+      let grandTotalPd = pdTotal + stdTotal;
+      document.getElementById('val-pd-total').innerText = grandTotalPd;
+      document.getElementById('val-pd-count').innerText = pdTotal;
+      document.getElementById('val-std-count').innerText = stdTotal;
+      document.getElementById('val-pd-pct').innerText = grandTotalPd > 0 ? Math.round((pdTotal / grandTotalPd) * 100) + '%' : '0%';
+      document.getElementById('val-std-pct').innerText = grandTotalPd > 0 ? Math.round((stdTotal / grandTotalPd) * 100) + '%' : '0%';
+
+      let pdLabels = dataObj.preDelStats.daily.map(d => d.day);
+      charts.preDelChart = buildPreDelChart('preDelChart', charts.preDelChart, pdLabels, dataObj.preDelStats.daily);
+
+      // Pre-Delivery Tab Logic (Hinckley)
+      let hPdTotal = dataObj.preDelHinckley.totalPreDel;
+      let hStdTotal = dataObj.preDelHinckley.totalStandard;
+      let hGrandTotalPd = hPdTotal + hStdTotal;
+      document.getElementById('val-h-pd-total').innerText = hGrandTotalPd;
+      document.getElementById('val-h-pd-count').innerText = hPdTotal;
+      document.getElementById('val-h-std-count').innerText = hStdTotal;
+      document.getElementById('val-h-pd-pct').innerText = hGrandTotalPd > 0 ? Math.round((hPdTotal / hGrandTotalPd) * 100) + '%' : '0%';
+      document.getElementById('val-h-std-pct').innerText = hGrandTotalPd > 0 ? Math.round((hStdTotal / hGrandTotalPd) * 100) + '%' : '0%';
+
+      charts.preDelHinckleyChart = buildPreDelChart('preDelHinckleyChart', charts.preDelHinckleyChart, pdLabels, dataObj.preDelHinckley.daily);
+
+      // Pre-Delivery Tab Logic (Sheffield)
+      let sPdTotal = dataObj.preDelSheffield.totalPreDel;
+      let sStdTotal = dataObj.preDelSheffield.totalStandard;
+      let sGrandTotalPd = sPdTotal + sStdTotal;
+      document.getElementById('val-s-pd-total').innerText = sGrandTotalPd;
+      document.getElementById('val-s-pd-count').innerText = sPdTotal;
+      document.getElementById('val-s-std-count').innerText = sStdTotal;
+      document.getElementById('val-s-pd-pct').innerText = sGrandTotalPd > 0 ? Math.round((sPdTotal / sGrandTotalPd) * 100) + '%' : '0%';
+      document.getElementById('val-s-std-pct').innerText = sGrandTotalPd > 0 ? Math.round((sStdTotal / sGrandTotalPd) * 100) + '%' : '0%';
+
+      charts.preDelSheffieldChart = buildPreDelChart('preDelSheffieldChart', charts.preDelSheffieldChart, pdLabels, dataObj.preDelSheffield.daily);
+
+      // Update Delivery Cards
+      document.getElementById('del-c-total').innerText = dataObj.delCombined.octopus + dataObj.delCombined.gxo;
+      document.getElementById('del-c-octo').innerText = dataObj.delCombined.octopus;
+      document.getElementById('del-c-gxo').innerText = dataObj.delCombined.gxo;
+      document.getElementById('del-c-split').innerText = calculateSplit(dataObj.delCombined.octopus, dataObj.delCombined.gxo);
+
+      document.getElementById('del-h-total').innerText = dataObj.delHinckley.octopus + dataObj.delHinckley.gxo;
+      document.getElementById('del-h-octo').innerText = dataObj.delHinckley.octopus;
+      document.getElementById('del-h-gxo').innerText = dataObj.delHinckley.gxo;
+      document.getElementById('del-h-split').innerText = calculateSplit(dataObj.delHinckley.octopus, dataObj.delHinckley.gxo);
+
+      document.getElementById('del-s-total').innerText = dataObj.delSheffield.octopus + dataObj.delSheffield.gxo;
+      document.getElementById('del-s-octo').innerText = dataObj.delSheffield.octopus;
+      document.getElementById('del-s-gxo').innerText = dataObj.delSheffield.gxo;
+      document.getElementById('del-s-split').innerText = calculateSplit(dataObj.delSheffield.octopus, dataObj.delSheffield.gxo);
+
+      document.getElementById('del-sl-total').innerText = dataObj.delSlough.octopus + dataObj.delSlough.gxo;
+      document.getElementById('del-sl-octo').innerText = dataObj.delSlough.octopus;
+      document.getElementById('del-sl-gxo').innerText = dataObj.delSlough.gxo;
+      document.getElementById('del-sl-split').innerText = calculateSplit(dataObj.delSlough.octopus, dataObj.delSlough.gxo);
+
+      // Cancellations Tab Logic (Collection Date Volumes)
+      let totalMaster = dataObj.stats.totalOrders; 
+      let totalCancel = dataObj.cancelStats.total;
+      let totalProcessed = totalMaster + totalCancel;
+      let overallCancelPct = totalProcessed > 0 ? ((totalCancel / totalProcessed) * 100).toFixed(1) : 0;
+
+      document.getElementById('val-processed-total').innerText = totalProcessed;
+      document.getElementById('val-cancelled-total').innerText = totalCancel;
+      document.getElementById('val-cancel-pct').innerText = overallCancelPct + '%';
+
+      const cancelReasonsContainer = document.getElementById('cancel-reasons-container');
+      cancelReasonsContainer.innerHTML = '';
+      const sortedReasons = Object.keys(dataObj.cancelStats.reasons).sort();
+      if (sortedReasons.length === 0) {
+        cancelReasonsContainer.innerHTML = '<p style="color:#d1b3ff; margin-left:5px; font-size:12px;">No reason data available.</p>';
+      } else {
+        sortedReasons.forEach(reason => {
+          cancelReasonsContainer.innerHTML += `<div class="card reason-card"><h3 title="${reason}">${reason}</h3><p class="value">${dataObj.cancelStats.reasons[reason]}</p></div>`;
+        });
+      }
+
+      let dailyCancelData = dataObj.dailyStats.map((ds, index) => {
+        let dailyMasterCount = ds.notStarted + ds.inProgress + ds.complete + ds.dispatched;
+        let dailyCancelCount = dataObj.cancelStats.daily[index];
+        let dailyProcessed = dailyMasterCount + dailyCancelCount;
+        return dailyProcessed > 0 ? (dailyCancelCount / dailyProcessed) * 100 : 0;
+      });
+
+      charts.cancelChart = buildCancelChart('cancelChart', charts.cancelChart, dataObj.dailyStats.map(d=>d.day), dailyCancelData);
+
+      // --- USING THE 7-DAY AGGREGATED ARRAYS FOR ORDERS CHARTS ---
+      charts.main = buildBarChart('ordersChart', charts.main, dataObj.ordersAggDaily);
+      charts.hinckley = buildBarChart('hinckleyChart', charts.hinckley, dataObj.ordersAggHinckley);
+      charts.sheffield = buildBarChart('sheffieldChart', charts.sheffield, dataObj.ordersAggSheffield);
+
+      // Update Line Charts
+      charts.delCombined = buildLineChart('delCombinedChart', charts.delCombined, dataObj.delDaily);
+      charts.delHinckley = buildLineChart('delHinckleyChart', charts.delHinckley, dataObj.delHDaily);
+      charts.delSheffield = buildLineChart('delSheffieldChart', charts.delSheffield, dataObj.delSDaily);
+      charts.delSlough = buildLineChart('delSloughChart', charts.delSlough, dataObj.delSloughDaily);
+
+      // Update Pct Line Charts
+      charts.delCombinedPct = buildPctLineChart('delCombinedPctChart', charts.delCombinedPct, dataObj.delDaily);
+      charts.delHinckleyPct = buildPctLineChart('delHinckleyPctChart', charts.delHinckleyPct, dataObj.delHDaily);
+      charts.delSheffieldPct = buildPctLineChart('delSheffieldPctChart', charts.delSheffieldPct, dataObj.delSDaily);
+      charts.delSloughPct = buildPctLineChart('delSloughPctChart', charts.delSloughPct, dataObj.delSloughDaily);
+
+      // Breakdown Strip
+      let breakdownContainer = document.getElementById('vehicle-breakdown-container');
+      breakdownContainer.innerHTML = '<div style="color:#df18a3; font-weight:bold; align-self:center; margin-right:10px; font-size:12px;">VEHICLE BREAKDOWN:</div>';
+      for (const [vehicle, count] of Object.entries(dataObj.vehicleBreakdown)) {
+        breakdownContainer.innerHTML += `<div class="breakdown-item"><span>${vehicle}</span><span>${count}</span></div>`;
+      }
+    }
+
+    // PURE LINE GRAPH for Pre-Delivery Volumes
+    function buildPreDelChart(canvasId, chartInstance, labels, dailyData) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      const solarTotals = dailyData.map(d => d.solarTotal);
+      const solarPreDels = dailyData.map(d => d.solarPreDel);
+      const hpTotals = dailyData.map(d => d.hpTotal);
+      const hpPreDels = dailyData.map(d => d.hpPreDel);
+
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Total Solar',
+              data: solarTotals,
+              borderColor: '#ff9f43',
+              backgroundColor: '#ff9f43',
+              borderWidth: 3,
+              tension: 0.4
+            },
+            {
+              label: 'Solar Pre-Del',
+              data: solarPreDels,
+              borderColor: '#ff9f43',
+              backgroundColor: '#ff9f43',
+              borderWidth: 2,
+              borderDash: [6, 4],
+              tension: 0.4
+            },
+            {
+              label: 'Total HP',
+              data: hpTotals,
+              borderColor: '#ee5253',
+              backgroundColor: '#ee5253',
+              borderWidth: 3,
+              tension: 0.4
+            },
+            {
+              label: 'HP Pre-Del',
+              data: hpPreDels,
+              borderColor: '#ee5253',
+              backgroundColor: '#ee5253',
+              borderWidth: 2,
+              borderDash: [6, 4],
+              tension: 0.4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              title: { display: true, text: 'Volume of Deliveries', color: '#d1b3ff', font: { size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    function buildCancelChart(canvasId, chartInstance, labels, dataPoints) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+      const trendData = calculateTrendLine(dataPoints);
+
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Cancellation %', data: dataPoints, borderColor: '#ff4d85', backgroundColor: '#ff4d85', tension: 0.4, borderWidth: 3 },
+            { label: 'Trend Line', data: trendData, borderColor: '#00d4ff', backgroundColor: 'transparent', borderDash: [5, 5], tension: 0, borderWidth: 2, pointRadius: 0 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { tooltip: { callbacks: { label: function(c) { return c.dataset.label + ': ' + c.parsed.y.toFixed(1) + '%'; } } } },
+          scales: { y: { beginAtZero: true, ticks: { callback: function(v) { return v + '%'; } } } }
+        }
+      });
+    }
+
+    function buildPipelineChart(canvasId, chartInstance, pipelineData) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+      const keys = Object.keys(pipelineData).sort();
+      const values = keys.map(k => pipelineData[k]);
+      return new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels: keys, datasets: [{ data: values, backgroundColor: pipelineColors, borderWidth: 0 }] },
+        options: { 
+          responsive: true, maintainAspectRatio: false, 
+          plugins: { legend: { position: 'right', labels: { boxWidth: 10, padding: 8 } } }, layout: { padding: 5 }
+        }
+      });
+    }
+
+    function buildBarChart(canvasId, chartInstance, dailyData) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+      return new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: dailyData.map(d => d.day),
+          datasets: [
+            { label: 'Not Started', data: dailyData.map(d => d.notStarted), backgroundColor: '#ff4d85' },
+            { label: 'In Progress', data: dailyData.map(d => d.inProgress), backgroundColor: '#ffc107' },
+            { label: 'Complete', data: dailyData.map(d => d.complete), backgroundColor: '#00e676' },
+            { label: 'Dispatched', data: dailyData.map(d => d.dispatched), backgroundColor: '#00d4ff' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
+      });
+    }
+
+    function buildLineChart(canvasId, chartInstance, dailyData) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dailyData.map(d => d.day),
+          datasets: [
+            { label: 'Octopus', data: dailyData.map(d => d.octopus), borderColor: '#9b5de5', backgroundColor: '#9b5de5', tension: 0.4, borderWidth: 2 },
+            { label: 'GXO', data: dailyData.map(d => d.gxo), borderColor: '#df18a3', backgroundColor: '#df18a3', tension: 0.4, borderWidth: 2 }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    function buildPctLineChart(canvasId, chartInstance, dailyData) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+      const octoPctData = dailyData.map(d => { let tot = d.octopus + d.gxo; return tot > 0 ? Math.round((d.octopus / tot) * 100) : 0; });
+      const gxoPctData = dailyData.map(d => { let tot = d.octopus + d.gxo; return tot > 0 ? Math.round((d.gxo / tot) * 100) : 0; });
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dailyData.map(d => d.day),
+          datasets: [
+            { label: 'Octo %', data: octoPctData, borderColor: '#9b5de5', backgroundColor: '#9b5de5', tension: 0.4, borderWidth: 2 },
+            { label: 'GXO %', data: gxoPctData, borderColor: '#df18a3', backgroundColor: '#df18a3', tension: 0.4, borderWidth: 2 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { tooltip: { callbacks: { label: function(c) { return c.dataset.label + ': ' + c.parsed.y + '%'; } } } },
+          scales: { y: { beginAtZero: true, max: 100, ticks: { callback: function(v) { return v + '%'; } } } }
+        }
+      });
+    }
+
+    function showError(error) {
+      document.getElementById('loading').innerText = "Error: " + error.message;
+      document.getElementById('loading').style.background = "#ff4d85";
+    }
+
+    async function plotDeliveries(mapData) {
+      markersLayer.clearLayers();
+      let deliveries = mapData.deliveries;
+      let targetDate = mapData.dateString;
+      
+      if (!deliveries || deliveries.length === 0) {
+        document.getElementById('loading').innerText = `No deliveries for ${targetDate}.`;
+        return;
+      }
+      
+      document.getElementById('loading').innerText = `Locating ${deliveries.length} postcodes...`;
+      
+      deliveries = deliveries.map(d => {
+        d.postcode = d.postcode.replace(/[\r\n]+/g, " ").trim();
+        return d;
+      });
+
+      const batches = [];
+      for (let i = 0; i < deliveries.length; i += 100) batches.push(deliveries.slice(i, i + 100));
+
+      const fetchPromises = batches.map(batch => {
+        const pcStrings = batch.map(d => d.postcode);
+        return fetch('https://api.postcodes.io/postcodes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postcodes: pcStrings }) }).then(res => res.json()).then(data => ({ data, batch }));
+      });
+
+      try {
+        const results = await Promise.all(fetchPromises);
+        let addedMarkers = 0;
+        let failedPCs = [];
+        
+        results.forEach(({data, batch}) => {
+          if (data.status === 200 && data.result) {
+            data.result.forEach((item, index) => {
+              if (item.result) { 
+                const carrier = batch[index].vehicle;
+                let markerIcon = pinDefault;
+                if (carrier === 'GXO') markerIcon = pinGXO;
+                else if (carrier === 'Octopus') markerIcon = pinOctopus;
+                L.marker([item.result.latitude, item.result.longitude], { icon: markerIcon })
+                 .bindPopup(`<b style="color:black;">${item.query}</b><br/><span style="color:black;">Carrier: <b>${carrier}</b></span>`)
+                 .addTo(markersLayer);
+                addedMarkers++;
+              } else {
+                failedPCs.push(batch[index].postcode);
+              }
+            });
+          }
+        });
+        
+        let msg = `Showing ${addedMarkers} deliveries for ${targetDate}.`;
+        if (failedPCs.length > 0) {
+            msg += ` (Unmapped: ${failedPCs.join(', ')})`;
+        }
+        document.getElementById('loading').innerText = msg;
+
+      } catch (e) {
+        document.getElementById('loading').innerText = "Map Error: Could not load postcodes.";
+      }
+    }
+
+    function scheduleMidnightRefresh() {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0); 
+      setTimeout(() => { fetchData(); }, midnight.getTime() - now.getTime() + 5000); 
+      
+      setInterval(() => { fetchData(); }, 1800000); 
+    }
+  </script>
+</body>
+</html>
